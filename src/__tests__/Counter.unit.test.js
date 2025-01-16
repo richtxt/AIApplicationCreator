@@ -1,0 +1,5 @@
+increment();
+
+decrement();
+
+reset();

@@ -1,0 +1,30 @@
+{
+  "feature": "src\\Counter.js",
+  "timestamp": "2025-01-16T23:12:51.862Z",
+  "results": {
+    "passed": false,
+    "error": "Command failed: npx jest src\\__tests__\n",
+    "details": ""
+  },
+  "analysis": {
+    "meetingRequirements": false,
+    "coverage": {
+      "percentage": 0,
+      "missingCases": []
+    },
+    "issues": [
+      {
+        "type": "error",
+        "description": "Command failed: npx jest src\\__tests__",
+        "impact": "high"
+      }
+    ],
+    "suggestedFixes": [
+      {
+        "issue": "Command failed",
+        "solution": "Check the Jest configuration and ensure that the test files are correctly located.",
+        "codeChanges": ""
+      }
+    ]
+  }
+}
