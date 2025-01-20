@@ -1,91 +1,113 @@
 import { ChatOpenAI } from "@langchain/openai";
-import { PromptTemplate } from "@langchain/core/prompts";
-import config from '../config/config.js';
 import * as dotenv from 'dotenv';
+import { promises as fs } from 'fs';
 
 dotenv.config();
 
 class PlanningAgent {
   constructor() {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY environment variable is not set");
-    }
-
     this.model = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: 'gpt-3.5-turbo',
-      temperature: 0.3,
-      maxTokens: 1000,
+      temperature: 0.2,
     });
   }
 
-  async analyzeFeaturesAndCreatePlan(featureRequest) {
+  async createPlan(request, context) {
     try {
-      console.log("\nPlanning Phase - Analyzing:", featureRequest);
-      
       const prompt = `
-As a technical architect, create a detailed implementation plan for this feature request.
+Create a detailed implementation plan for this feature request:
+${request}
 
-Feature Request: ${featureRequest}
+Project Context:
+${context}
 
-Create a plan that breaks this down into small, clear steps.
-Each step should:
-1. Have a clear, specific purpose
-2. Include what files will be created or modified
-3. Specify what will be implemented
-4. Include test requirements
+Provide specific requirements and test criteria. Include:
+1. Visual requirements (what should be visible and where)
+2. Functional requirements (what should work and how)
+3. Test criteria for each requirement
 
-Respond in this exact JSON format:
+Return in this exact JSON format:
 {
-  "analysis": {
-    "feature": "Brief description of the feature",
-    "complexity": "low/medium/high",
-    "requirements": ["list", "of", "key", "requirements"]
-  },
-  "implementation": {
-    "steps": [
+  "requirements": {
+    "visual": [
       {
-        "id": 1,
-        "description": "Specific description of what this step implements",
-        "purpose": "Why this step is needed",
-        "files": ["list of files to create/modify"],
-        "testRequirements": ["list of what to test"]
+        "description": "string",
+        "selector": "CSS selector",
+        "priority": "high|medium|low"
+      }
+    ],
+    "functional": [
+      {
+        "description": "string",
+        "steps": [
+          {
+            "action": "click|type|check",
+            "selector": "CSS selector",
+            "value": "string (for type)",
+            "expectedValue": "string (for check)"
+          }
+        ],
+        "priority": "high|medium|low"
       }
     ]
-  }
-}
+  },
+  "testCriteria": {
+    "visual": [
+      {
+        "requirement": "string",
+        "selector": "CSS selector"
+      }
+    ],
+    "functional": [
+      {
+        "requirement": "string",
+        "steps": [
+          {
+            "action": "click|type|check",
+            "selector": "CSS selector",
+            "value": "string",
+            "expectedValue": "string"
+          }
+        ]
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "string",
+      "type": "string",
+      "purpose": "string"
+    }
+  ]
+}`;
 
-Make steps atomic and focused. Each step should do ONE thing well.
-`;
-
-      console.log("\nGenerating implementation plan...");
       const response = await this.model.invoke(prompt);
       
       try {
-        const plan = JSON.parse(response.content);
-        console.log("\nPlan generated successfully");
+        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No JSON found in response');
+        }
         
-        // Convert to the format expected by the orchestrator
+        const plan = JSON.parse(jsonMatch[0]);
         return {
           success: true,
-          plan: {
-            analysis: plan.analysis,
-            implementationSteps: plan.implementation.steps.map(step => ({
-              step: step.id,
-              description: step.description,
-              purpose: step.purpose,
-              files: step.files,
-              testRequirements: step.testRequirements
-            }))
-          }
+          ...plan
         };
       } catch (error) {
-        console.error('Error parsing planning response:', error);
-        throw new Error('Failed to create valid implementation plan');
+        console.error('Error parsing plan:', error);
+        return {
+          success: false,
+          error: 'Failed to parse planning response'
+        };
       }
     } catch (error) {
       console.error('Error in planning:', error);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 }

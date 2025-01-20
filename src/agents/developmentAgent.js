@@ -1,7 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
 import * as path from 'path';
-import config from '../config/config.js';
+import documentManager from '../utils/documentManager.js';
 
 class DevelopmentAgent {
   constructor() {
@@ -13,16 +13,20 @@ class DevelopmentAgent {
     });
   }
 
-  async generateCode(request, step) {
+  async generateCode({ request, context }) {
     try {
-      console.log("\nGenerating code for step:", step);
+      console.log("\nGenerating code for request:", request);
       
+      // Get relevant context from ChromaDB
+      const projectContext = await documentManager.getContextForQuery(request);
+
       const prompt = `
 You are an expert React developer. Create a component based on these requirements:
 
 Feature Request: ${request}
 
-Current Step: ${JSON.stringify(step, null, 2)}
+Project Context:
+${projectContext}
 
 Requirements:
 - Use React functional components with hooks
@@ -45,36 +49,42 @@ Your response must be in this exact format:
 
       console.log("\nSending request to OpenAI...");
       const response = await this.model.invoke(prompt);
-      console.log("\nReceived response:", response.content);
+      console.log("\nReceived response");
 
       const result = this.parseResponse(response.content);
       
       // Transform the code into proper file content
-      const fileContents = this.prepareFileContents(result.code, step.files[0]);
+      const componentName = this.extractComponentName(result.code);
+      const fileName = `${componentName}.jsx`;
+      const filePath = path.join('src', 'components', fileName);
+      
+      const fileContents = this.prepareFileContents(result.code);
 
       return {
+        success: true,
         code: fileContents,
         explanation: result.explanation,
-        files: step.files.map(file => path.join('src', 'components', file))
+        files: [{
+          path: filePath,
+          content: fileContents
+        }]
       };
     } catch (error) {
       console.error('\nError in generateCode:', error);
       return {
-        code: "// Error generating code\n// " + error.message,
-        explanation: "An error occurred: " + error.message
+        success: false,
+        error: error.message
       };
     }
   }
 
-  prepareFileContents(code, filename) {
-    if (filename.endsWith('.css')) {
-      return code.replace(/\/\/ /g, '');
-    }
+  extractComponentName(code) {
+    const match = code.match(/function\s+(\w+)|const\s+(\w+)\s*=/);
+    return match ? (match[1] || match[2]) : 'GeneratedComponent';
+  }
 
-    // For JavaScript/React files
-    return `import React, { useState } from 'react';
-
-${code}`;
+  prepareFileContents(code) {
+    return `import React, { useState } from 'react';\n\n${code}`;
   }
 
   parseResponse(response) {
@@ -95,10 +105,7 @@ ${code}`;
       };
     } catch (error) {
       console.error('\nError parsing response:', error);
-      return {
-        code: "// Error parsing response",
-        explanation: "Failed to parse the generated response"
-      };
+      throw new Error('Failed to parse the generated response');
     }
   }
 }

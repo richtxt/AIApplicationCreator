@@ -1,21 +1,41 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Server } from 'socket.io';
+import { createServer } from 'http';
 import orchestrator from './agents/orchestrator.js';
-import previewServer from './utils/previewServer.js';
+import documentManager from './utils/documentManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Express setup
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer);
+
 app.use(express.json());
 app.use(express.static('public'));
+app.use('/components', express.static('src/components'));
 
 // Initialize the system
 await orchestrator.initialize();
 
-// Start preview server
-previewServer.start();
+// WebSocket connection handling
+io.on('connection', (socket) => {
+  console.log('Client connected');
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
+
+// Create a global event emitter for the orchestrator
+global.eventEmitter = {
+  emit: (event, data) => {
+    io.emit(event, data);
+  }
+};
 
 // Serve main HTML interface
 app.get('/', (req, res) => {
@@ -31,30 +51,11 @@ app.post('/generate', async (req, res) => {
       return res.status(400).json({ error: 'Feature request is required' });
     }
 
+    // Start processing
+    io.emit('phase', { phase: 'Starting', message: 'Processing feature request' });
+
+    // Process the feature request
     const result = await orchestrator.processFeatureRequest(featureRequest);
-
-    // Add preview URL if component was created
-    try {
-      if (result.implementations?.length > 0) {
-        // Look for main component file
-        const mainFile = result.implementations.find(impl => 
-          impl.files?.some(file => file.endsWith('.js') || file.endsWith('.jsx'))
-        );
-
-        if (mainFile && mainFile.files?.length > 0) {
-          const componentFile = mainFile.files.find(f => 
-            f.endsWith('.js') || f.endsWith('.jsx')
-          );
-          if (componentFile) {
-            const componentName = path.basename(componentFile, path.extname(componentFile));
-            result.previewUrl = previewServer.getPreviewUrl(componentName);
-          }
-        }
-      }
-    } catch (previewError) {
-      console.error('Error setting up preview:', previewError);
-      // Continue without preview if there's an error
-    }
 
     res.json({
       ...result,
@@ -62,11 +63,36 @@ app.post('/generate', async (req, res) => {
     });
   } catch (error) {
     console.error('Error processing request:', error);
+    io.emit('error', { message: error.message });
     res.status(500).json({ 
       error: 'Internal server error',
       details: error.message,
       logs: global.processLogs || []
     });
+  }
+});
+
+
+// Get our chromaDB files
+app.get('/files', async (req, res) => {
+  try {
+      // Get files from ChromaDB through DocumentManager
+      const documents = await documentManager.getAllFiles();
+      
+      // Send the files data
+      res.json({
+          success: true,
+          files: documents.map(doc => ({
+              path: doc.metadata.path,
+              timestamp: doc.metadata.timestamp
+          }))
+      });
+  } catch (error) {
+      console.error('Error fetching files:', error);
+      res.status(500).json({
+          success: false,
+          error: 'Failed to fetch files'
+      });
   }
 });
 
@@ -77,39 +103,19 @@ app.get('/logs', (req, res) => {
   });
 });
 
-// Get component preview
-app.get('/preview/:component', (req, res) => {
-  const componentName = req.params.component;
-  const previewHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Preview: ${componentName}</title>
-      <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
-      <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-      <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-      <link href="/components/${componentName}.css" rel="stylesheet">
-    </head>
-    <body>
-      <div id="root"></div>
-      <script type="text/babel" src="/components/${componentName}.js"></script>
-    </body>
-    </html>
-  `;
-  res.send(previewHtml);
-});
-
 // Start the server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
 // Global error handler
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  io.emit('error', { message: 'Unhandled Rejection: ' + reason });
 });
 
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
+  io.emit('error', { message: 'Uncaught Exception: ' + error.message });
 });

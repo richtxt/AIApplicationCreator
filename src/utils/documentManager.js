@@ -8,6 +8,7 @@ dotenv.config();
 
 class DocumentManager {
   constructor() {
+    this.client = new ChromaClient();
     this.collection = null;
     this.COLLECTION_NAME = "codebase-context";
     this.documents = new Map(); // In-memory cache
@@ -15,12 +16,16 @@ class DocumentManager {
 
   async initialize() {
     try {
-      // Load files into memory
+      // Initialize ChromaDB collection
+      this.collection = await this.client.getOrCreateCollection({
+        name: this.COLLECTION_NAME,
+      });
+
+      // Load files into memory and ChromaDB
       await this.syncCodebase();
       console.log("Document manager initialized successfully");
     } catch (error) {
       console.error('Error initializing document manager:', error);
-      // Continue without throwing
       console.log('Continuing without document context...');
     }
   }
@@ -32,9 +37,19 @@ class DocumentManager {
 
       if (codeFiles.length === 0) return;
 
+      const documents = [];
+      const metadatas = [];
+      const ids = [];
+
       for (const file of codeFiles) {
         try {
           const content = await fs.readFile(file, 'utf-8');
+          const id = Buffer.from(file).toString('base64');
+          
+          documents.push(content);
+          metadatas.push({ path: file });
+          ids.push(id);
+
           this.documents.set(file, {
             content,
             timestamp: Date.now()
@@ -44,10 +59,16 @@ class DocumentManager {
         }
       }
 
+      // Add documents to ChromaDB
+      await this.collection.add({
+        ids,
+        documents,
+        metadatas
+      });
+
       console.log('Codebase sync complete');
     } catch (error) {
       console.error('Error syncing codebase:', error);
-      // Continue without throwing
     }
   }
 
@@ -81,7 +102,14 @@ class DocumentManager {
 
       // Write to filesystem
       await fs.writeFile(filePath, content);
-      console.log(`Written file: ${filePath}`);
+      
+      // Update ChromaDB
+      const id = Buffer.from(filePath).toString('base64');
+      await this.collection.upsert({
+        ids: [id],
+        documents: [content],
+        metadatas: [{ path: filePath }]
+      });
 
       // Update in-memory cache
       this.documents.set(filePath, {
@@ -92,26 +120,39 @@ class DocumentManager {
       console.log(`Updated file: ${filePath}`);
     } catch (error) {
       console.error(`Error updating file ${filePath}:`, error);
-      // Continue without throwing
     }
   }
 
+  async getAllFiles() {
+    try {
+        const response = await this.collection.get();
+        return response.metadatas.map((metadata, index) => ({
+            metadata: {
+                path: metadata.path,
+                timestamp: this.documents.get(metadata.path)?.timestamp || Date.now()
+            },
+            id: response.ids[index]
+        }));
+    } catch (error) {
+        console.error('Error getting all files:', error);
+        return [];
+    }
+}
+
   async getContextForQuery(query) {
     try {
-      // Simple context matching based on file content
-      const relevantFiles = [];
-      for (const [filePath, { content }] of this.documents.entries()) {
-        if (content.toLowerCase().includes(query.toLowerCase())) {
-          relevantFiles.push({
-            path: filePath,
-            content: content
-          });
-        }
+      const results = await this.collection.query({
+        queryTexts: [query],
+        nResults: 5
+      });
+
+      if (results.documents[0].length === 0) {
+        return "No relevant context found";
       }
 
-      return relevantFiles.length > 0 
-        ? relevantFiles.map(f => `File: ${f.path}\n${f.content}`).join('\n\n')
-        : "No relevant context found";
+      return results.documents[0]
+        .map((content, i) => `File: ${results.metadatas[0][i].path}\n${content}`)
+        .join('\n\n');
     } catch (error) {
       console.error('Error getting context:', error);
       return "Error retrieving context";

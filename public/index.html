@@ -4,193 +4,142 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Development Interface</title>
-    <style>
-        :root {
-            --primary: #007bff;
-            --success: #28a745;
-            --warning: #ffc107;
-            --danger: #dc3545;
-            --light: #f8f9fa;
-            --dark: #343a40;
-        }
-
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 20px auto;
-            padding: 0 20px;
-            line-height: 1.6;
-        }
-
-        .container {
-            display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 20px;
-        }
-
-        .sidebar {
-            background: var(--light);
-            padding: 20px;
-            border-radius: 8px;
-        }
-
-        .main-content {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-        }
-
-        textarea {
-            width: 100%;
-            height: 150px;
-            padding: 8px;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-family: monospace;
-            resize: vertical;
-        }
-
-        button {
-            padding: 10px 20px;
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            filter: brightness(90%);
-        }
-
-        .phase {
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-        }
-
-        .phase-header {
-            font-size: 1.2em;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: var(--primary);
-        }
-
-        .code-block {
-            background: var(--light);
-            padding: 15px;
-            border-radius: 5px;
-            font-family: monospace;
-            white-space: pre-wrap;
-            margin: 10px 0;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 5px;
-        }
-
-        .status-success { background-color: var(--success); }
-        .status-warning { background-color: var(--warning); }
-        .status-error { background-color: var(--danger); }
-
-        .error-message {
-            color: var(--danger);
-            background-color: rgba(220, 53, 69, 0.1);
-            padding: 10px;
-            border-radius: 4px;
-            margin: 10px 0;
-        }
-
-        .tabs {
-            display: flex;
-            margin-bottom: 10px;
-        }
-
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border: 1px solid #ddd;
-            border-bottom: none;
-            border-radius: 5px 5px 0 0;
-            margin-right: 5px;
-        }
-
-        .tab.active {
-            background-color: var(--primary);
-            color: white;
-        }
-
-        .tab-content {
-            border: 1px solid #ddd;
-            padding: 20px;
-            border-radius: 0 5px 5px 5px;
-        }
-
-        #log-output {
-            height: 200px;
-            overflow-y: auto;
-            background: #1e1e1e;
-            color: #fff;
-            padding: 10px;
-            font-family: monospace;
-        }
-    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
 </head>
-<body>
-    <div class="container">
-        <div class="sidebar">
-            <h2>Feature Request</h2>
-            <textarea id="featureRequest" placeholder="Describe the feature you want to create...
-
-Example: Create a counter component with increment and decrement buttons that displays the current count and doesn't go below zero."></textarea>
-            <button onclick="submitFeatureRequest()">Generate Feature</button>
-            <div id="error-display"></div>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Input Section -->
+        <div class="bg-white p-6 rounded-lg shadow-lg mb-8">
+            <div class="flex gap-4">
+                <input 
+                    type="text" 
+                    id="featureInput"
+                    class="flex-1 p-4 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="Describe your feature (e.g., 'Create a calculator that can add, subtract, multiply and divide')"
+                >
+                <button 
+                    onclick="submitFeature()"
+                    class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:ring-2"
+                >
+                    Generate
+                </button>
+            </div>
         </div>
 
-        <div class="main-content">
-            <div class="tabs">
-                <div class="tab active" data-tab="progress" onclick="switchTab('progress', event)">Progress</div>
-                <div class="tab" data-tab="preview" onclick="switchTab('preview', event)">Preview</div>
-                <div class="tab" data-tab="logs" onclick="switchTab('logs', event)">Logs</div>
+        <!-- Main Content -->
+        <div class="grid grid-cols-2 gap-8">
+            <!-- Left Column: Live Component -->
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Live Component</h2>
+                    <div id="phaseIndicator" class="text-sm text-gray-500">
+                        Phase: <span id="currentPhase">Waiting...</span>
+                    </div>
+                </div>
+                <div id="componentContainer" class="min-h-[400px] border rounded-lg p-4">
+                    <!-- Component will be rendered here -->
+                </div>
             </div>
 
-            <div id="progress-content" class="tab-content">
-                <div id="implementation-progress"></div>
-            </div>
-
-            <div id="preview-content" class="tab-content" style="display: none">
-                <iframe id="preview-frame" style="width: 100%; height: 500px; border: 1px solid #ddd;"></iframe>
-            </div>
-
-            <div id="logs-content" class="tab-content" style="display: none">
-                <div id="log-output"></div>
+            <!-- Right Column: Console, Logs & Files -->
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <div class="mb-4">
+                    <div class="flex gap-2 mb-4">
+                        <button 
+                            onclick="switchTab('console')" 
+                            class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 tab-button active"
+                            data-tab="console"
+                        >
+                            Console
+                        </button>
+                        <button 
+                            onclick="switchTab('logs')" 
+                            class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 tab-button"
+                            data-tab="logs"
+                        >
+                            Logs
+                        </button>
+                        <button 
+                            onclick="switchTab('files')" 
+                            class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 tab-button"
+                            data-tab="files"
+                        >
+                            Files
+                        </button>
+                    </div>
+                    <div id="console" class="tab-content">
+                        <div id="consoleOutput" class="font-mono text-sm bg-gray-900 text-green-400 p-4 rounded-lg h-[400px] overflow-y-auto">
+                            > System initialized
+                        </div>
+                    </div>
+                    <div id="logs" class="tab-content hidden">
+                        <div id="logsOutput" class="font-mono text-sm bg-gray-100 p-4 rounded-lg h-[400px] overflow-y-auto">
+                            <!-- Logs will appear here -->
+                        </div>
+                    </div>
+                    <div id="files" class="tab-content hidden">
+                        <div class="flex justify-between items-center mb-2 px-4">
+                            <span class="text-sm font-semibold">Indexed Files</span>
+                            <button 
+                                onclick="refreshFiles()"
+                                class="text-sm text-blue-500 hover:text-blue-600"
+                            >
+                                Refresh
+                            </button>
+                        </div>
+                        <div id="filesOutput" class="font-mono text-sm bg-gray-100 p-4 rounded-lg h-[400px] overflow-y-auto">
+                            <div class="animate-pulse text-gray-500">Loading indexed files...</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        async function submitFeatureRequest() {
-            const request = document.getElementById('featureRequest').value.trim();
+        const socket = io();
+        let currentComponent = null;
+
+        // Socket.io event handlers
+        socket.on('phase', (data) => {
+            updatePhase(data.phase);
+            addToConsole(`Phase: ${data.phase} - ${data.message}`);
+        });
+
+        socket.on('log', (data) => {
+            addToLogs(data.message);
+        });
+
+        socket.on('error', (data) => {
+            addToConsole(`Error: ${data.message}`, 'text-red-500');
+        });
+
+        socket.on('component-update', (data) => {
+            updateComponent(data.component);
+        });
+
+        socket.on('files-update', (data) => {
+            updateFiles(data.files);
+        });
+
+        // UI Functions
+        async function submitFeature() {
+            const input = document.getElementById('featureInput');
+            const feature = input.value.trim();
             
-            if (!request) {
-                showError('Please enter a feature request');
+            if (!feature) {
+                addToConsole('Please enter a feature description', 'text-yellow-500');
                 return;
             }
 
-            clearError();
-            updateProgress('Starting feature generation...');
+            addToConsole(`Generating feature: ${feature}`);
             
             try {
                 const response = await fetch('/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ featureRequest: request })
+                    body: JSON.stringify({ featureRequest: feature })
                 });
                 
                 const data = await response.json();
@@ -198,132 +147,135 @@ Example: Create a counter component with increment and decrement buttons that di
                 if (response.ok) {
                     handleSuccess(data);
                 } else {
-                    showError(data.error || 'An error occurred while generating the feature');
+                    addToConsole(`Error: ${data.error}`, 'text-red-500');
                 }
             } catch (error) {
-                showError(error.message);
-                console.error('Error:', error);
+                addToConsole(`Error: ${error.message}`, 'text-red-500');
+            }
+        }
+
+        async function refreshFiles() {
+            try {
+                const response = await fetch('/files');
+                if (response.ok) {
+                    const data = await response.json();
+                    updateFiles(data.files);
+                } else {
+                    throw new Error('Failed to fetch files');
+                }
+            } catch (error) {
+                addToConsole(`Error refreshing files: ${error.message}`, 'text-red-500');
             }
         }
 
         function handleSuccess(data) {
-            const progressDiv = document.getElementById('implementation-progress');
-            let html = '';
-
-            // Show Planning Phase
-            if (data.plan) {
-                html += createPhaseSection('Planning', data.plan);
+            if (data.component) {
+                updateComponent(data.component);
             }
-
-            // Show Implementation Phase
-            if (data.implementations) {
-                html += createPhaseSection('Implementation', data.implementations);
-            }
-
-            // Show Fixes if any
-            if (data.fixes?.applied) {
-                html += createPhaseSection('Fixes', data.fixes);
-            }
-
-            progressDiv.innerHTML = html;
-
-            // Update preview if available
-            if (data.previewUrl) {
-                document.getElementById('preview-frame').src = data.previewUrl;
-                switchTab('preview');
-            }
-
-            // Add to logs
-            addToLogs(data.logs || []);
-        }
-
-        function createPhaseSection(phase, data) {
-            return `
-                <div class="phase">
-                    <div class="phase-header">
-                        <span class="status-indicator status-${data.success ? 'success' : 'warning'}"></span>
-                        ${phase} Phase
-                    </div>
-                    <div class="phase-content">
-                        ${formatPhaseContent(phase, data)}
-                    </div>
-                </div>
-            `;
-        }
-
-        function formatPhaseContent(phase, data) {
-            if (typeof data === 'object') {
-                return `<pre class="code-block">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
-            }
-            return escapeHtml(data);
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error-display');
-            errorDiv.innerHTML = `<div class="error-message">${escapeHtml(message)}</div>`;
-        }
-
-        function clearError() {
-            document.getElementById('error-display').innerHTML = '';
-        }
-
-        function updateProgress(message) {
-            const progressDiv = document.getElementById('implementation-progress');
-            progressDiv.innerHTML += `<div>${escapeHtml(message)}</div>`;
-        }
-
-        async function updateLogs() {
-            try {
-                const response = await fetch('/logs');
-                const data = await response.json();
-                const logsDiv = document.getElementById('log-output');
-                
-                logsDiv.innerHTML = data.logs.map(log => 
-                    `<div class="log-entry">${escapeHtml(log)}</div>`
-                ).join('');
-                
-                logsDiv.scrollTop = logsDiv.scrollHeight;
-            } catch (error) {
-                console.error('Error fetching logs:', error);
+            if (data.logs) {
+                data.logs.forEach(log => addToLogs(log));
             }
         }
 
-        // Update logs every 2 seconds
-        setInterval(updateLogs, 2000);
-
-        function addToLogs(messages) {
-            const logsDiv = document.getElementById('log-output');
-            messages.forEach(msg => {
-                logsDiv.innerHTML += `<div class="log-entry">${escapeHtml(msg)}</div>`;
-            });
-            logsDiv.scrollTop = logsDiv.scrollHeight;
+        function updatePhase(phase) {
+            document.getElementById('currentPhase').textContent = phase;
         }
 
-        function switchTab(tabName, event) {
-            if (event) event.preventDefault();
+        function updateComponent(component) {
+            const container = document.getElementById('componentContainer');
+            container.innerHTML = '';
             
-            // Update tab styles
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            if (typeof component === 'string') {
+                container.innerHTML = component;
+            } else {
+                console.log('Component received:', component);
+            }
+        }
 
-            // Show selected content
+        function updateFiles(files) {
+            const filesOutput = document.getElementById('filesOutput');
+            filesOutput.innerHTML = '';
+
+            if (!files || files.length === 0) {
+                filesOutput.innerHTML = '<div class="text-gray-500">No files indexed</div>';
+                return;
+            }
+
+            const filesList = document.createElement('div');
+            filesList.className = 'space-y-2';
+
+            files.forEach(file => {
+                const fileEntry = document.createElement('div');
+                fileEntry.className = 'flex items-center p-2 hover:bg-gray-200 rounded-lg cursor-pointer';
+                
+                const icon = document.createElement('span');
+                icon.className = 'mr-2 text-gray-500';
+                icon.textContent = '📄';
+                
+                const path = document.createElement('span');
+                path.textContent = file.path;
+                path.className = 'flex-1';
+                
+                const timestamp = document.createElement('span');
+                timestamp.textContent = new Date(file.timestamp).toLocaleString();
+                timestamp.className = 'text-xs text-gray-500';
+                
+                fileEntry.appendChild(icon);
+                fileEntry.appendChild(path);
+                fileEntry.appendChild(timestamp);
+                
+                filesList.appendChild(fileEntry);
+            });
+
+            filesOutput.appendChild(filesList);
+        }
+
+        function addToConsole(message, className = '') {
+            const console = document.getElementById('consoleOutput');
+            const entry = document.createElement('div');
+            entry.className = className;
+            entry.textContent = `> ${message}`;
+            console.appendChild(entry);
+            console.scrollTop = console.scrollHeight;
+        }
+
+        function addToLogs(message) {
+            const logs = document.getElementById('logsOutput');
+            const entry = document.createElement('div');
+            entry.textContent = message;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active', 'bg-blue-500', 'text-white');
+                button.classList.add('bg-gray-200');
+                if (button.dataset.tab === tabName) {
+                    button.classList.add('active', 'bg-blue-500', 'text-white');
+                }
+            });
+
+            // Update tab content
             document.querySelectorAll('.tab-content').forEach(content => {
-                content.style.display = 'none';
+                content.classList.add('hidden');
             });
-            document.getElementById(`${tabName}-content`).style.display = 'block';
+            document.getElementById(tabName).classList.remove('hidden');
+
+            // Fetch files when switching to files tab
+            if (tabName === 'files') {
+                refreshFiles();
+            }
         }
 
-        function escapeHtml(unsafe) {
-            if (typeof unsafe !== 'string') return unsafe;
-            return unsafe
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
+        // Initialize
+        document.getElementById('featureInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitFeature();
+        });
+
+        // Initial files load
+        refreshFiles();
     </script>
 </body>
 </html>
